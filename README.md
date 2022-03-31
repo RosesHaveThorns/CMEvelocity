@@ -10,4 +10,6 @@ A novel method for analysis of CME kinematics using Computer vision (opencv2) in
 
 ## Example
 
-Figure ? Shows the results of this method, which gave an average velocity of 1222 m/s. This is similar to the velocity given by the SOHO/LASCO catalog.
+![solarmaxima](https://user-images.githubusercontent.com/20016090/161012837-c7916644-fe84-4d40-9950-0a800718a614.png)
+
+The graphs above show the results of this method for a CME occuring on 20th September 2017 between 14:00 and 18:00, which gave an average velocity of 1222 m/s. This is similar to the velocity given by the SOHO/LASCO catalog.

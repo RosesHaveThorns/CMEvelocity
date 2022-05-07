@@ -271,13 +271,13 @@ if __name__ == "__main__":
     fig.suptitle('Analaysis of the Kinematics of a CME occuring on ' + times[0].strftime('%Y/%m/%d'))
     timefmt = mdates.DateFormatter('%H:%M')
 
-    axs[0, 0].plot(times, d)
+    axs[0, 0].plot(times, d, 'x', color='black')
     axs[0, 0].set_title('Distance of CME Front from Solar Centre')
     axs[0, 0].set_ylabel('Distance [km]')
     axs[0, 0].set_xlabel('Time [HH:MM]')
     axs[0, 0].xaxis.set_major_formatter(timefmt)
 
-    axs[0, 1].plot(vtimes, v)
+    axs[0, 1].plot(vtimes, v, 'x', color='black')
     axs[0, 1].set_title('CME Front Velocity')
     axs[0, 1].set_ylabel('Velocity [km/s]')
     axs[0, 1].set_xlabel('Time [HH:MM]')

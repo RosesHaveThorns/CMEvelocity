@@ -7,22 +7,23 @@ import cv2
 import csv
 from datetime import datetime
 import matplotlib.dates as mdates
-from sklearn.linear_model import LinearRegression
-
+import calendar
+from scipy import stats
 
 # CODE IMPROVEMENTS TODO
 # 1 - improve noise reduction (less blur, keep cme outline?)
 #          maybe only keep in pixels where there was a high intensity pixel adjacent last image?
-# 2 - fit line to distance curve (linear and quadratic), calc velocity as differential equation of this
+# X - fit line to distance curve (linear and quadratic), calc velocity as differential equation of this
 # 3 - easy way to run on many cmes? command line?
 # 4 - trial other threshold values
 # 5 - calculate angle as average of the front in each image
-# 6 - position centre of sun mark correctly
+# X - position centre of sun mark correctly
 
 # try on many cmes, calc error from linear fit speed for linear fit and 2nd order speed for quadratic fit on lasco catalog
 # graph error against velocity, any pattern? (probably worse for fast cmes as less images)
 
-dayfolder = "20170910_3"
+dayfolders_arr = ["20140103", "20140403", "20140403-04", "20140616", "20140703", "20141013"]
+dayfolder = ""
 imgwidth = 32 # in solar radii
 solradii_to_km = 695700 # in km
 
@@ -106,7 +107,6 @@ def denoise(imgs, t="median", n=5):
 def invert(imgs):
     result = []
     for i in range(len(imgs)):
-        print("Cropped: image " + str(i))
         print("Inverted: image " + str(i))
         res = cv2.bitwise_not(imgs[i])
         result.append(res)
@@ -149,7 +149,7 @@ def findContours(imgs, drawover):
 def crop(imgs, t=0, b=1, l=0, r=1):
     result = []
     for i in range(len(imgs)):
-        print("Crop: image " + str(i))
+        print("Cropped: image " + str(i))
         result.append(imgs[i][t:-b, l:-r])
     return result
 
@@ -216,109 +216,106 @@ def getTimes(fnames):
     return times
 
 if __name__ == "__main__":  
-    imgs, fnames = getImages("imgs")
-    times = getTimes(fnames)
+    for foldername in dayfolders_arr:
+        dayfolder = foldername
 
-    imgs = crop(imgs, b=50)
-    imgs_gray = toGrayscale(imgs)
+        imgs, fnames = getImages("imgs")
+        times = getTimes(fnames)
 
-    #imgs_inv = invert(imgs)
+        imgs = crop(imgs, b=50)
+        imgs_gray = toGrayscale(imgs)
 
-    denoised_med = denoise(imgs_gray, t="median", n=5)
-    denoised_med = denoise(denoised_med, t="median", n=5)
-    denoised = denoise(denoised_med, t="gaussian", n=5)
-    denoised = denoise(denoised, t="gaussian", n=5)
-    denoised = denoise(denoised, t="gaussian", n=5)
+        #imgs_inv = invert(imgs)
 
-    thresholded = threshold(denoised, 200, 255)
+        denoised_med = denoise(imgs_gray, t="median", n=5)
+        denoised_med = denoise(denoised_med, t="median", n=5)
+        denoised = denoise(denoised_med, t="gaussian", n=5)
+        denoised = denoise(denoised, t="gaussian", n=5)
+        denoised = denoise(denoised, t="gaussian", n=5)
 
-    cs = findContours(thresholded, imgs)
+        thresholded = threshold(denoised, 150, 255)
 
-    drawn, cmes = largestCountour(imgs, cs)
+        cs = findContours(thresholded, imgs)
 
-    final, furthest = findFurthestFromCenter(drawn, cmes, times, centerAdjust=[0, 10])
+        drawn, cmes = largestCountour(imgs, cs)
 
-    #blobs = blob_detect(denoised)
+        final, furthest = findFurthestFromCenter(drawn, cmes, times, centerAdjust=[-2, 13])
 
-    print("\nDATA:")
-    for i in range(len(fnames)):
-        print(str(fnames[i]) + ",", end="")
-    print("\n")
-    for i in range(len(furthest)):
-        print(str(furthest[i][2]) + ",", end="")
-    print("\n")
+        #blobs = blob_detect(denoised)
 
-    writeToVideo(final, times, "imgs")
+        print("\nDATA:")
+        for i in range(len(fnames)):
+            print(str(fnames[i]) + ",", end="")
+        print("\n")
+        for i in range(len(furthest)):
+            print(str(furthest[i][2]) + ",", end="")
+        print("\n")
 
-    # convert to km
-    h, w, _ = imgs[0].shape
-    pxwidth = (imgwidth * solradii_to_km) / w
-    print("pixel width [km] = " + str(pxwidth))
+        writeToVideo(final, times, "imgs")
 
-    #x = np.linspace(0, len(furthest), len(furthest))
-    d = []
-    for i in range(len(furthest)):
-        d.append(furthest[i][2] * pxwidth)
+        # convert to km
+        h, w, _ = imgs[0].shape
+        pxwidth = (imgwidth * solradii_to_km) / w
+        print("pixel width [km] = " + str(pxwidth))
 
-    # linear regression on cme height data
+        #x = np.linspace(0, len(furthest), len(furthest))
+        d = []
+        for i in range(len(furthest)):
+            d.append(furthest[i][2] * pxwidth)
 
-    linear_regressor = LinearRegression()
+        # linear regression on cme height data
 
-    x = np.array([0])
-    for i in range(len(d)):
-        if i+1 == len(d):
-            break
-        dif = (times[i+1] - times[i]).total_seconds()
-        x = np.append(x, [x[i]+dif])
-    x = x.reshape(-1, 1)
-    print(x)
+        x = np.array([])
+        for i in range(len(times)):
+            epoch_i = calendar.timegm(times[i].timetuple())
+            epoch_0 = calendar.timegm(times[0].timetuple())
+            dif = (epoch_i - epoch_0)
+            print(dif)
+            x = np.append(x, dif)
 
-    linear_regressor.fit(x, d)  # perform linear regression
-    d_pred = linear_regressor.predict(x)  # make predictions
-    print(d_pred)
+        res = stats.linregress(x, d)
 
-    # linear velocity estimate
+        # linear velocity estimate
 
-    delta_d = (d_pred[-1] - d_pred[0]) / (x[-1] - x[0])
-    print("Linear Velocity Estimate: " + str(delta_d))
+        print("Linear Velocity Estimate: " + str(res.slope))
 
-    # export to csv
-    with open(dayfolder + '.csv', 'w', encoding='UTF8') as f:
-        writer = csv.writer(f)
+        # export to csv
+        with open(dayfolder + '.csv', 'w', encoding='UTF8') as f:
+            writer = csv.writer(f)
 
-        writer.writerow(times)
-        writer.writerow(d)
-    
-    # show plot
-    fig, ax = plt.subplots() #axs[0, 0]
-    fig.suptitle('Analaysis of the Kinematics of a CME occuring on ' + times[0].strftime('%Y/%m/%d'))
-    timefmt = mdates.DateFormatter('%H:%M')
+            writer.writerow(times)
+            writer.writerow(d)
+        
+        # show plot
+        fig, ax = plt.subplots() #axs[0, 0]
+        fig.suptitle('Analaysis of the Kinematics of a CME occuring on ' + times[0].strftime('%Y/%m/%d'))
+        timefmt = mdates.DateFormatter('%H:%M')
 
-    ax.plot(times, d, 'x', color='black')
-    ax.set_title('Distance of CME Front from Solar Centre')
-    ax.set_ylabel('Distance [km]')
-    ax.set_xlabel('Time [HH:MM]')
-    ax.xaxis.set_major_formatter(timefmt)
-    #plt.ticklabel_format(timefmt)
-    
+        ax.plot(times, d, 'x', color='black', label="raw data")
+        ax.set_title('Distance of CME Front from Solar Centre')
+        ax.set_ylabel('Distance [km]')
+        ax.set_xlabel('Time [HH:MM]')
+        ax.xaxis.set_major_formatter(timefmt)
+        #plt.ticklabel_format(timefmt)
+        
+        plt.plot(times, res.intercept + res.slope*x, 'r', label='linear regression')
 
-    ax.plot(times, d_pred, color='red')
+        # axs[0, 1].plot(vtimes, v, 'x', color='black')
+        # axs[0, 1].set_title('CME Front Velocity')
+        # axs[0, 1].set_ylabel('Velocity [km/s]')
+        # axs[0, 1].set_xlabel('Time [HH:MM]')
+        # axs[0, 1].xaxis.set_major_formatter(timefmt)
 
-    # axs[0, 1].plot(vtimes, v, 'x', color='black')
-    # axs[0, 1].set_title('CME Front Velocity')
-    # axs[0, 1].set_ylabel('Velocity [km/s]')
-    # axs[0, 1].set_xlabel('Time [HH:MM]')
-    # axs[0, 1].xaxis.set_major_formatter(timefmt)
+        textstr = "linear velocity = " + str(round(res.slope)) + "km/s\nregression std error = " + str(round(res.stderr,2))
 
-    textstr = "linear velocity = " + str(round(delta_d[0])) + "km/s"
+        # these are matplotlib.patch.Patch properties
+        props = dict(boxstyle='round', facecolor='white', alpha=0.2)
 
-    # these are matplotlib.patch.Patch properties
-    props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+        # place a text box in upper left in axes coords
+        ax.text(0.6, 0.2, textstr, fontsize=8, transform=ax.transAxes,
+                verticalalignment='top', bbox=props)
 
-    # place a text box in upper left in axes coords
-    ax.text(0.05, 0.95, textstr, fontsize=8, transform=ax.transAxes,
-            verticalalignment='top', bbox=props)
+        ax.legend()
 
-    plt.savefig("imgs/" + dayfolder + "/output/plot")
-    plt.show()
-    
+        plt.savefig("imgs/" + dayfolder + "/output/plot")
+        plt.show()

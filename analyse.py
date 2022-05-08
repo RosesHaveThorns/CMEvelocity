@@ -7,6 +7,20 @@ import cv2
 import csv
 from datetime import datetime
 import matplotlib.dates as mdates
+from sklearn.linear_model import LinearRegression
+
+
+# CODE IMPROVEMENTS TODO
+# 1 - improve noise reduction (less blur, keep cme outline?)
+#          maybe only keep in pixels where there was a high intensity pixel adjacent last image?
+# 2 - fit line to distance curve (linear and quadratic), calc velocity as differential equation of this
+# 3 - easy way to run on many cmes? command line?
+# 4 - trial other threshold values
+# 5 - calculate angle as average of the front in each image
+# 6 - position centre of sun mark correctly
+
+# try on many cmes, calc error from linear fit speed for linear fit and 2nd order speed for quadratic fit on lasco catalog
+# graph error against velocity, any pattern? (probably worse for fast cmes as less images)
 
 dayfolder = "20170910_3"
 imgwidth = 32 # in solar radii
@@ -239,25 +253,34 @@ if __name__ == "__main__":
     # convert to km
     h, w, _ = imgs[0].shape
     pxwidth = (imgwidth * solradii_to_km) / w
-    print(pxwidth)
+    print("pixel width [km] = " + str(pxwidth))
 
     #x = np.linspace(0, len(furthest), len(furthest))
     d = []
     for i in range(len(furthest)):
         d.append(furthest[i][2] * pxwidth)
 
-    # calculate velocity
-    v = []
-    vtimes = []
+    # linear regression on cme height data
+
+    linear_regressor = LinearRegression()
+
+    x = np.array([0])
     for i in range(len(d)):
-        i += 1
-        if (i >= len(d)):
+        if i+1 == len(d):
             break
-        vtimes.append(times[i-1] + (times[i]-times[i-1])/2)
-        vel = (d[i] - d[i-1]) / (times[i]-times[i-1]).total_seconds()
-        v.append(vel)
-    avg = np.average(v)
-    print("Average Velocity: " + str(avg))
+        dif = (times[i+1] - times[i]).total_seconds()
+        x = np.append(x, [x[i]+dif])
+    x = x.reshape(-1, 1)
+    print(x)
+
+    linear_regressor.fit(x, d)  # perform linear regression
+    d_pred = linear_regressor.predict(x)  # make predictions
+    print(d_pred)
+
+    # linear velocity estimate
+
+    delta_d = (d_pred[-1] - d_pred[0]) / (x[-1] - x[0])
+    print("Linear Velocity Estimate: " + str(delta_d))
 
     # export to csv
     with open(dayfolder + '.csv', 'w', encoding='UTF8') as f:
@@ -267,21 +290,35 @@ if __name__ == "__main__":
         writer.writerow(d)
     
     # show plot
-    fig, axs = plt.subplots(2, 2)
+    fig, ax = plt.subplots() #axs[0, 0]
     fig.suptitle('Analaysis of the Kinematics of a CME occuring on ' + times[0].strftime('%Y/%m/%d'))
     timefmt = mdates.DateFormatter('%H:%M')
 
-    axs[0, 0].plot(times, d, 'x', color='black')
-    axs[0, 0].set_title('Distance of CME Front from Solar Centre')
-    axs[0, 0].set_ylabel('Distance [km]')
-    axs[0, 0].set_xlabel('Time [HH:MM]')
-    axs[0, 0].xaxis.set_major_formatter(timefmt)
+    ax.plot(times, d, 'x', color='black')
+    ax.set_title('Distance of CME Front from Solar Centre')
+    ax.set_ylabel('Distance [km]')
+    ax.set_xlabel('Time [HH:MM]')
+    ax.xaxis.set_major_formatter(timefmt)
+    #plt.ticklabel_format(timefmt)
+    
 
-    axs[0, 1].plot(vtimes, v, 'x', color='black')
-    axs[0, 1].set_title('CME Front Velocity')
-    axs[0, 1].set_ylabel('Velocity [km/s]')
-    axs[0, 1].set_xlabel('Time [HH:MM]')
-    axs[0, 1].xaxis.set_major_formatter(timefmt)
+    ax.plot(times, d_pred, color='red')
 
+    # axs[0, 1].plot(vtimes, v, 'x', color='black')
+    # axs[0, 1].set_title('CME Front Velocity')
+    # axs[0, 1].set_ylabel('Velocity [km/s]')
+    # axs[0, 1].set_xlabel('Time [HH:MM]')
+    # axs[0, 1].xaxis.set_major_formatter(timefmt)
+
+    textstr = "linear velocity = " + str(round(delta_d[0])) + "km/s"
+
+    # these are matplotlib.patch.Patch properties
+    props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+
+    # place a text box in upper left in axes coords
+    ax.text(0.05, 0.95, textstr, fontsize=8, transform=ax.transAxes,
+            verticalalignment='top', bbox=props)
+
+    plt.savefig("imgs/" + dayfolder + "/output/plot")
     plt.show()
     
